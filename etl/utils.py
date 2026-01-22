@@ -9,8 +9,7 @@ def get_spark_session(app_name="OFF_ETL"):
     builder = SparkSession.builder \
         .appName(app_name) \
         .config("spark.sql.session.timeZone", "UTC") \
-        .config("spark.jars", "mysql-connector-j-8.0.33.jar") \
-        .config("spark.driver.extraClassPath", "mysql-connector-j-8.0.33.jar")
+        .config("spark.jars.packages", "com.mysql:mysql-connector-j:8.0.33")
         
     # In a real environment, we would start this differently
     # For this workshop, local[*] is fine
