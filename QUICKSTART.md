@@ -36,7 +36,6 @@ make download        # Télécharger dataset OpenFoodFacts (~5GB)
 # Développement
 make shell           # Shell dans conteneur ETL
 make mysql-shell     # Console MySQL
-make jupyter         # Jupyter Lab (http://localhost:8888)
 make test            # Tests unitaires
 ```
 
@@ -64,9 +63,8 @@ Modifier `.env` pour personnaliser:
 # Mémoire Spark
 SPARK_DRIVER_MEMORY=4g
 
-# Ports
+# Port MySQL
 DB_PORT=3306
-JUPYTER_PORT=8888
 ```
 
 ## 🆘 Dépannage Rapide

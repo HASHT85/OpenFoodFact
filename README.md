@@ -60,44 +60,34 @@ Voir `docs/architecture.md` pour les détails complets.
 
 ```
 OpenFoodFact/
-├── conf/                       # Configuration
-│   └── config.yaml            # Paramètres ETL et qualité
-├── data/                       # Datalake local
-│   ├── bronze/                # Données brutes (Parquet)
-│   ├── silver/                # Données nettoyées (Parquet)
-│   ├── quality_reports/       # Rapports qualité (JSON)
-│   └── run_metadata.json      # Métadonnées des runs
-├── docs/                       # Documentation
-│   ├── architecture.md        # Note d'architecture
-│   ├── CAHIER_DE_QUALITE.md  # Règles et métriques qualité
-│   └── DATA_DICTIONARY.md     # Dictionnaire de données
 ├── etl/                        # Code source ETL (PySpark)
-│   ├── __init__.py
-│   ├── main.py               # Orchestrateur principal
-│   ├── settings.py           # Configuration & constantes
-│   ├── utils.py              # Utilitaires Spark
-│   ├── schema_bronze.py      # Schémas explicites
-│   └── jobs/                 # Jobs ETL
-│       ├── ingest.py         # Bronze: Ingestion
-│       ├── conform.py        # Silver: Conformation
-│       ├── load_dimensions.py     # Gold: Dimensions
-│       ├── load_product_scd.py    # Gold: Produits (SCD2)
-│       ├── load_fact.py      # Gold: Faits
-│       └── quality_report.py # Rapport qualité
+│   ├── main.py                # Orchestrateur principal
+│   ├── settings.py            # Configuration
+│   ├── utils.py               # Utilitaires Spark
+│   ├── schema_bronze.py       # Schémas explicites
+│   └── jobs/                  # Jobs ETL (6 fichiers)
 ├── sql/                        # Scripts SQL
-│   ├── schema.sql            # DDL: Création tables
-│   ├── init_dimensions.sql   # Initialisation & vues
-│   └── analysis_queries.sql  # Requêtes analytiques
+│   ├── schema.sql             # DDL tables
+│   ├── init_dimensions.sql    # Init dimensions
+│   └── analysis_queries.sql   # Requêtes analytiques
 ├── tests/                      # Tests unitaires
-│   ├── test_etl.py           # Tests PySpark
-│   └── sample_data.jsonl     # Données de test
-├── projet/                     # Notebooks Jupyter
-│   └── OpenFoodFacts_ETL_Workshop.ipynb
-├── docker-compose.yml         # Services (MySQL)
+│   ├── test_etl.py
+│   └── sample_data.jsonl
+├── docs/                       # Documentation
+│   ├── architecture.md
+│   ├── CAHIER_DE_QUALITE.md
+│   └── DATA_DICTIONARY.md
+├── conf/                       # Configuration
+│   └── config.yaml
+├── scripts/                    # Scripts utilitaires
+│   └── docker_init.sh
+├── data/                       # Data Lake (généré)
+├── docker-compose.yml         # Services Docker
 ├── Dockerfile                 # Image ETL
-├── requirements.txt           # Dépendances Python
-├── download_dump.py          # Script téléchargement données
-└── README.md                  # Ce fichier
+├── Makefile                   # Commandes simplifiées
+└── README.md
+
+Voir PROJECT_STRUCTURE.md pour plus de détails.
 ```
 
 ## 🚀 Installation & Configuration
@@ -147,11 +137,10 @@ make etl-skip        # Réutiliser Bronze existant
 # Développement
 make shell           # Shell dans conteneur ETL
 make mysql-shell     # Console MySQL
-make jupyter         # Jupyter Lab (http://localhost:8888)
 make test            # Tests unitaires
 ```
 
-**📖 Plus de détails dans les sections ci-dessous**
+**📖 Voir QUICKSTART.md pour démarrer rapidement**
 
 ---
 
