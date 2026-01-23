@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Git
+.git/
+.gitignore
+
+# Data (exclude large data files from image)
+data/bronze/
+data/silver/
+data/gold/
+data/quality_reports/
+data/*.jsonl
+data/*.gz
+data/*.csv
+
+# Documentation (already copied)
+docs/*.md
+
+# Docker files (no need to copy into image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Test files
+tests/__pycache__/
+
+# Temporary files
+tmp/
+temp/
+nul
+
+# Claude
+.claude/

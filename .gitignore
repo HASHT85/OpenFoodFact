@@ -1,0 +1,121 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+.conda/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data files (large files not for Git)
+data/bronze/
+data/silver/
+data/gold/
+data/quality_reports/
+data/*.jsonl
+data/*.gz
+data/*.csv
+data/*.parquet
+data/run_metadata.json
+
+# Logs
+*.log
+logs/
+nul
+
+# Docker volumes (generated data)
+mysql_data/
+jupyter_data/
+
+# Environment variables (contains secrets)
+.env
+
+# Backups
+backups/*.sql
+backups/*.tar.gz
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS specific
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Claude
+.claude/
+
+# Test coverage
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / pytest
+.pytest_cache/
+.tox/
+
+# Spark
+metastore_db/
+derby.log
+spark-warehouse/
+
+# Keep structure but ignore content
+!data/.gitkeep
+!logs/.gitkeep
+!backups/.gitkeep

@@ -1,0 +1,199 @@
+# ==============================================================================
+# OpenFoodFacts ETL Configuration
+# M1 EISI/CDPIA/CYBER - Atelier Intégration des Données
+# ==============================================================================
+
+# Project metadata
+project:
+  name: "OpenFoodFacts ETL"
+  version: "1.0.0"
+  team: "M1 EISI/CDPIA/CYBER"
+
+# Data sources
+sources:
+  openfoodfacts:
+    export_url: "https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz"
+    api_base_url: "https://world.openfoodfacts.org/api/v2"
+    api_version: "v2"
+
+# Data paths (Medallion Architecture)
+paths:
+  base_dir: "./data"
+  bronze: "./data/bronze"
+  silver: "./data/silver"
+  gold: "./data/gold"
+  quality_reports: "./data/quality_reports"
+  run_metadata: "./data/run_metadata.json"
+
+# Database configuration
+database:
+  host: "localhost"
+  port: 3306
+  database: "off_datamart"
+  user: "root"
+  password: "password"
+  # Override with environment variables in production:
+  # DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+
+# Spark configuration
+spark:
+  app_name: "OFF_ETL_Pipeline"
+  config:
+    spark.sql.session.timeZone: "UTC"
+    spark.jars.packages: "com.mysql:mysql-connector-j:8.0.33"
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.coalescePartitions.enabled: "true"
+    spark.sql.shuffle.partitions: "200"
+    spark.default.parallelism: "100"
+
+# Quality rules
+quality:
+  # Bounds for nutriments (per 100g)
+  nutriments:
+    energy_kcal_100g:
+      min: 0
+      max: 900  # Most foods are below this except pure oils/fats
+    sugars_100g:
+      min: 0
+      max: 100  # Cannot exceed 100g per 100g
+    fat_100g:
+      min: 0
+      max: 100
+    saturated_fat_100g:
+      min: 0
+      max: 100
+    salt_100g:
+      min: 0
+      max: 25   # Very high salt content
+    sodium_100g:
+      min: 0
+      max: 10   # salt = sodium * 2.5
+    proteins_100g:
+      min: 0
+      max: 100
+    fiber_100g:
+      min: 0
+      max: 100
+
+  # Completeness scoring weights (must sum to 1.0)
+  completeness_weights:
+    product_name: 0.20
+    brands: 0.15
+    categories: 0.15
+    nutriscore_grade: 0.10
+    energy_kcal_100g: 0.10
+    sugars_100g: 0.075
+    fat_100g: 0.075
+    saturated_fat_100g: 0.05
+    salt_100g: 0.05
+    proteins_100g: 0.075
+    fiber_100g: 0.05
+
+  # Alert thresholds
+  alerts:
+    completeness_threshold: 0.5  # Alert if avg completeness < 50%
+    anomaly_threshold: 100       # Alert if total anomalies > 100
+
+# ETL job configuration
+etl:
+  # Deduplication strategy
+  deduplication:
+    key_column: "code"  # Product barcode
+    order_by: "last_modified_t"  # Keep most recent
+    order_direction: "desc"
+
+  # SCD Type 2 configuration
+  scd2:
+    tracked_columns:
+      - "product_name"
+      - "brands"
+      - "primary_category"
+      - "nutriscore_grade"
+      - "nova_group"
+      - "ecoscore_grade"
+
+  # Dimension loading strategy
+  dimensions:
+    strategy: "upsert"  # or "truncate_insert"
+    min_products_for_brand: 1  # Minimum products to include a brand
+
+  # Time dimension configuration
+  time_dimension:
+    start_date: "2020-01-01"
+    end_date: "2030-12-31"
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# Performance tuning
+performance:
+  spark_shuffle_partitions: 200
+  jdbc_batch_size: 1000
+  broadcast_threshold: 10485760  # 10 MB
+
+# Language resolution priority
+languages:
+  priority:
+    - "fr"  # French first
+    - "en"  # English second
+    - null  # Then generic field
+
+# Data validation rules
+validation:
+  required_fields:
+    - "code"
+
+  field_patterns:
+    code: "^[0-9]{8,13}$"  # EAN-8 or EAN-13
+
+  max_string_length:
+    product_name: 500
+    brands: 255
+    generic_name: 500
+
+# Export configuration
+exports:
+  quality_report:
+    format: "json"
+    include_examples: true
+    max_examples: 5
+
+  analytics:
+    format: "csv"
+    delimiter: ","
+    encoding: "utf-8"
+
+# Testing configuration
+testing:
+  sample_data_path: "./tests/sample_data.jsonl"
+  expected_min_records: 1
+  run_integration_tests: true
+
+# Feature flags
+features:
+  enable_api_enrichment: false  # Use API to enrich missing data
+  enable_taxonomy_resolution: false  # Resolve categories/countries via taxonomies
+  enable_incremental_load: false  # Enable incremental loading (future)
+  enable_bridge_tables: false  # Load many-to-many bridge tables
+
+# Monitoring
+monitoring:
+  enable_metrics: true
+  metrics_output: "./data/metrics"
+  alert_email: null  # Set to email for alerts
+
+# Advanced options
+advanced:
+  # Partitioning strategy for Parquet files
+  parquet_partitions:
+    bronze: null
+    silver: null
+
+  # Compression
+  compression: "snappy"
+
+  # Coalesce/repartition
+  coalesce_partitions: true

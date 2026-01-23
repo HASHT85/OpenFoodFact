@@ -1,0 +1,100 @@
+services:
+  # MySQL Database Service
+  mysql:
+    image: mysql:8.0
+    container_name: off_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${DB_NAME:-off_datamart}
+      MYSQL_USER: ${DB_USER:-off_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-off_password}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/init_dimensions.sql:/docker-entrypoint-initdb.d/02-init_dimensions.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - off_network
+
+  # ETL Application Service
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: off_etl
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # Database Configuration
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-off_datamart}
+      DB_USER: root
+      DB_PASSWORD: ${DB_ROOT_PASSWORD:-password}
+
+      # Spark Configuration
+      SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-2g}
+      SPARK_EXECUTOR_MEMORY: ${SPARK_EXECUTOR_MEMORY:-2g}
+
+      # Python Configuration
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./etl:/app/etl:ro
+      - ./sql:/app/sql:ro
+      - ./conf:/app/conf:ro
+      - ./tests:/app/tests:ro
+      - ./data:/app/data
+    networks:
+      - off_network
+    # Keep container running for manual execution
+    command: tail -f /dev/null
+
+  # Jupyter Notebook Service (optional - for development/exploration)
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: off_jupyter
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-off_datamart}
+      DB_USER: root
+      DB_PASSWORD: ${DB_ROOT_PASSWORD:-password}
+      JUPYTER_ENABLE_LAB: "yes"
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - ./:/app
+      - jupyter_data:/root/.jupyter
+    networks:
+      - off_network
+    command: >
+      bash -c "
+        jupyter lab --ip=0.0.0.0 --port=8888 --no-browser
+        --allow-root --NotebookApp.token='' --NotebookApp.password=''
+      "
+
+volumes:
+  mysql_data:
+    driver: local
+  jupyter_data:
+    driver: local
+
+networks:
+  off_network:
+    driver: bridge

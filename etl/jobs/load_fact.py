@@ -1,84 +1,204 @@
-import sys
-import os
+"""
+Gold Layer - Load Fact Table
+Loads fact_nutrition_snapshot with nutritional measures and quality metrics
+"""
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
+from datetime import datetime
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils import get_spark_session, get_logger
+from etl.utils import setup_logger, collect_quality_issues
+from etl.settings import SILVER_PATH, JDBC_URL, JDBC_PROPERTIES
 
-def load_facts(spark, silver_path, db_props, jdbc_url):
-    logger = get_logger("GoldFactLoader")
-    
-    df_silver = spark.read.parquet(silver_path)
 
-    # 1. Prepare Time SK (Using last_modified_t converted to YYYYMMDD)
-    # If last_modified_t is long (seconds), cast to timestamp then format
-    df_with_time = df_silver.withColumn(
-        "time_sk", 
-        F.from_unixtime("last_modified_t", "yyyyMMdd").cast("int")
+logger = setup_logger("LoadFact")
+
+
+def get_product_mapping(spark: SparkSession) -> DataFrame:
+    """
+    Get code -> product_sk mapping for active products
+    """
+    query = "(SELECT product_sk, code FROM dim_product WHERE is_current = 1) AS active_products"
+    return spark.read.jdbc(
+        JDBC_URL,
+        query,
+        properties=JDBC_PROPERTIES
     )
 
-    # 2. Get Product SK (Active Link)
-    # We join with dim_product on code where is_current = 1
-    # Note: In a true historical reload, we'd join on effective ranges.
-    # Here we assume we are loading the snapshot that just became current.
-    
-    df_product = spark.read.jdbc(jdbc_url, "dim_product", properties=db_props) \
-                      .filter("is_current = 1") \
-                      .select("product_sk", "code")
 
-    df_joined = df_with_time.join(df_product, "code", "inner")
+def get_time_sk_for_date(date_str: str) -> int:
+    """
+    Convert date string to time_sk (YYYYMMDD format)
 
-    # 3. Calculate Quality Scores / Metrics (Example logic)
-    # Completeness: (count(non-null nutriments) / total potential nutriments)
-    # This is a bit complex in Spark SQL without listing all cols.
-    # We'll mock a score for now or use a simple UDF.
-    
-    df_final = df_joined.select(
+    Args:
+        date_str: Date in any format
+
+    Returns:
+        time_sk as integer
+    """
+    # For this workshop, use current date
+    # In production, would parse last_modified_t
+    return int(datetime.now().strftime("%Y%m%d"))
+
+
+def prepare_fact_data(df_silver: DataFrame, product_mapping: DataFrame) -> DataFrame:
+    """
+    Prepare fact table data from Silver with proper foreign keys
+
+    Args:
+        df_silver: Silver layer DataFrame
+        product_mapping: Product SK mapping
+
+    Returns:
+        DataFrame ready for fact table insertion
+    """
+    logger.info("Preparing fact data...")
+
+    # Join with product mapping to get product_sk
+    df = df_silver.join(
+        product_mapping,
+        on="code",
+        how="inner"  # Only include products that exist in dim_product
+    )
+
+    # Compute time_sk from last_modified_t
+    # Convert Unix timestamp to date and then to time_sk (YYYYMMDD)
+    df = df.withColumn(
+        "time_sk",
+        F.from_unixtime(F.col("last_modified_t"), "yyyyMMdd").cast("int")
+    )
+
+    # Collect quality issues into JSON
+    issue_columns = [
+        "energy_kcal_100g_out_of_bounds",
+        "sugars_100g_out_of_bounds",
+        "fat_100g_out_of_bounds",
+        "saturated_fat_100g_out_of_bounds",
+        "salt_100g_out_of_bounds",
+        "sodium_100g_out_of_bounds",
+        "proteins_100g_out_of_bounds",
+        "fiber_100g_out_of_bounds"
+    ]
+
+    df = collect_quality_issues(df, issue_columns)
+
+    # Select columns for fact table
+    df_fact = df.select(
         F.col("product_sk"),
         F.col("time_sk"),
-        F.col("nutriments.energy-kcal_100g").alias("energy_kcal_100g"),
-        F.col("nutriments.fat_100g"),
-        F.col("nutriments.saturated-fat_100g").alias("saturated_fat_100g"),
-        F.col("nutriments.sugars_100g"),
-        F.col("nutriments.salt_100g"),
-        F.col("nutriments.proteins_100g"),
-        F.col("nutriments.fiber_100g"),
-        F.col("nutriments.sodium_100g"),
+        # Measures (100g)
+        F.col("energy_kcal_100g"),
+        F.col("fat_100g"),
+        F.col("saturated_fat_100g"),
+        F.col("sugars_100g"),
+        F.col("salt_100g"),
+        F.col("proteins_100g"),
+        F.col("fiber_100g"),
+        F.col("sodium_100g"),
+        # Scores & Attributes
         F.col("nutriscore_grade"),
         F.col("nova_group"),
         F.col("ecoscore_grade"),
-        
-        # Calculate Completeness Score
-        # Columns to check for completeness
-        (
-            (
-                F.when(F.col("nutriments.energy-kcal_100g").isNotNull(), 1).otherwise(0) +
-                F.when(F.col("nutriments.fat_100g").isNotNull(), 1).otherwise(0) +
-                F.when(F.col("nutriments.saturated-fat_100g").isNotNull(), 1).otherwise(0) +
-                F.when(F.col("nutriments.sugars_100g").isNotNull(), 1).otherwise(0) +
-                F.when(F.col("nutriments.salt_100g").isNotNull(), 1).otherwise(0) +
-                F.when(F.col("nutriments.proteins_100g").isNotNull(), 1).otherwise(0) +
-                F.when(F.col("nutriments.fiber_100g").isNotNull(), 1).otherwise(0) +
-                F.when(F.col("nutriments.sodium_100g").isNotNull(), 1).otherwise(0)
-            ) / 8.0
-        ).alias("completeness_score"),
-        
-        F.lit("{}").alias("quality_issues_json")  # Mocked for now, requires complex validation logic
+        # Quality Metrics
+        F.col("completeness_score"),
+        F.col("quality_issues_json")
     )
 
-    # 4. Write
-    df_final.write.jdbc(jdbc_url, "fact_nutrition_snapshot", mode="append", properties=db_props)
-    logger.info(f"Loaded {df_final.count()} facts.")
+    return df_fact
+
+
+def load_fact_nutrition(spark: SparkSession, df_fact: DataFrame) -> dict:
+    """
+    Load fact_nutrition_snapshot table
+
+    Strategy: Append-only (no updates)
+    Each ETL run adds new snapshots
+
+    Returns:
+        Dictionary with metrics
+    """
+    logger.info("Loading fact_nutrition_snapshot...")
+
+    total_records = df_fact.count()
+    logger.info(f"Inserting {total_records} fact records...")
+
+    # Write to MySQL
+    # Use append mode since facts are immutable snapshots
+    df_fact.write.jdbc(
+        JDBC_URL,
+        "fact_nutrition_snapshot",
+        mode="append",
+        properties=JDBC_PROPERTIES
+    )
+
+    logger.info(f"Successfully loaded {total_records} fact records")
+
+    # Collect quality metrics
+    records_with_issues = df_fact.filter(
+        F.col("quality_issues_json") != "{}"
+    ).count()
+
+    avg_completeness = df_fact.agg(
+        F.avg("completeness_score")
+    ).collect()[0][0]
+
+    return {
+        "total_records": total_records,
+        "records_with_quality_issues": records_with_issues,
+        "avg_completeness": round(float(avg_completeness), 3) if avg_completeness else 0
+    }
+
+
+def run_load_fact_job(spark: SparkSession) -> dict:
+    """
+    Main entry point for fact loading job
+
+    Returns:
+        Dictionary with job metrics
+    """
+    logger.info("=" * 80)
+    logger.info("GOLD LAYER - LOAD FACT NUTRITION SNAPSHOT JOB")
+    logger.info("=" * 80)
+
+    # Read Silver layer
+    logger.info(f"Reading Silver layer from: {SILVER_PATH}")
+    df_silver = spark.read.parquet(SILVER_PATH)
+
+    # Get product mapping
+    product_mapping = get_product_mapping(spark)
+    logger.info(f"Found {product_mapping.count()} active products")
+
+    # Prepare fact data
+    df_fact = prepare_fact_data(df_silver, product_mapping)
+
+    # Load fact table
+    result = load_fact_nutrition(spark, df_fact)
+
+    metrics = {
+        "job": "load_fact",
+        "layer": "gold",
+        **result
+    }
+
+    logger.info("=" * 80)
+    logger.info("Fact loading complete:")
+    logger.info(f"  Total records: {result['total_records']}")
+    logger.info(f"  Records with issues: {result['records_with_quality_issues']}")
+    logger.info(f"  Avg completeness: {result['avg_completeness']}")
+    logger.info("=" * 80)
+
+    return metrics
+
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: load_fact.py <silver_parquet_path>")
-        sys.exit(1)
+    from etl.utils import create_spark_session
 
-    silver_path = sys.argv[1]
-    
-    import settings
-    
-    spark = get_spark_session("OFF_Gold_Facts")
-    load_facts(spark, silver_path, settings.DB_PROPS, settings.JDBC_URL)
-    spark.stop()
+    spark = create_spark_session("OFF_Load_Fact")
+
+    try:
+        metrics = run_load_fact_job(spark)
+        print("\n✓ Fact loading completed successfully")
+    except Exception as e:
+        logger.error(f"Job failed: {e}")
+        raise
+    finally:
+        spark.stop()

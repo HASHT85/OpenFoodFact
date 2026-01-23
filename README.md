@@ -1,45 +1,418 @@
-# Atelier Intégration des Données - OpenFoodFacts
+# Atelier Intégration des Données - OpenFoodFacts ETL
 
-Projet ETL Big Data pour l'intégration des données OpenFoodFacts dans un Datamart MySQL.
+**M1 EISI / M1 CDPIA / M1 CYBER**
+**Module:** TRDE703 Atelier Intégration des Données
 
-## Architecture
+## 📋 Description du Projet
 
-*   **ETL** : Apache Spark (PySpark)
-*   **Storage** : Parquet (Bronze/Silver), MySQL (Gold)
-*   **Modèle** : Schéma en étoile (Dimensions + Faits)
+Projet ETL Big Data qui construit un datamart "OpenFoodFacts Nutrition & Qualité" en utilisant **Apache Spark** (PySpark) pour l'extraction, la transformation et le chargement de données massives vers un datawarehouse **MySQL**.
 
-## Structure du Projet
+Le projet implémente une architecture médaillon (Bronze → Silver → Gold) avec gestion de la qualité des données, modélisation en étoile (star schema), et SCD Type 2 pour l'historisation des produits.
 
-*   `etl/` : Code source Spark
-    *   `jobs/` : Scripts de jobs (ingest, conform, load)
-    *   `main.py` : Orchestrateur
-*   `sql/` : Scripts SQL (DDL, DML, Analyses)
-*   `docs/` : Documentation (Architecture, Qualité)
-*   `conf/` : Fichiers de configuration
-*   `data/` : Dossier de sortie locale (Bronze/Silver)
+## 🏗️ Architecture
 
-## Installation
+```
+┌─────────────────┐
+│ OpenFoodFacts   │  Source: JSONL/CSV (données massives)
+│   Data Export   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  BRONZE LAYER   │  Ingestion brute avec schéma explicite
+│   (Parquet)     │  Job: etl/jobs/ingest.py
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  SILVER LAYER   │  Nettoyage, normalisation, qualité
+│   (Parquet)     │  Job: etl/jobs/conform.py
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   GOLD LAYER    │  Modèle en étoile (Star Schema)
+│  MySQL Datamart │  Jobs: load_dimensions.py, load_product_scd.py, load_fact.py
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Quality Report │  Métriques & anomalies
+│   & Analytics   │  Job: quality_report.py + SQL queries
+└─────────────────┘
+```
 
-1.  Installer les dépendances : `pip install -r requirements.txt`
-2.  Avoir Java installé (JAVA_HOME configuré).
-3.  Avoir une instance MySQL locale.
+### Modèle de Données (Star Schema)
 
-## Usage
+**Dimensions:**
+- `dim_brand` - Marques
+- `dim_category` - Catégories de produits
+- `dim_country` - Pays
+- `dim_time` - Dimension temporelle (YYYYMMDD)
+- `dim_product` - Produits (SCD Type 2)
 
-### Option 1 : Jupyter Notebook (Recommandé)
-1.  Lancer Jupyter : `jupyter notebook`
-2.  Aller dans le dossier `projet/`.
-3.  Ouvrir `OpenFoodFacts_ETL_Workshop.ipynb`.
+**Faits:**
+- `fact_nutrition_snapshot` - Mesures nutritionnelles (100g) avec scores qualité
 
-### Option 2 : Scripts Python
-1.  Initialiser la BDD :
-    ```bash
-    mysql -u [user] -p < sql/schema.sql
-    ```
-2.  Lancer le pipeline :
-    ```bash
-    python etl/main.py /chemin/vers/openfoodfacts-products.jsonl
-    ```
+Voir `docs/architecture.md` pour les détails complets.
 
-## Auteurs
-M1 EISI / CDPIA / CYBER
+## 📂 Structure du Projet
+
+```
+OpenFoodFact/
+├── conf/                       # Configuration
+│   └── config.yaml            # Paramètres ETL et qualité
+├── data/                       # Datalake local
+│   ├── bronze/                # Données brutes (Parquet)
+│   ├── silver/                # Données nettoyées (Parquet)
+│   ├── quality_reports/       # Rapports qualité (JSON)
+│   └── run_metadata.json      # Métadonnées des runs
+├── docs/                       # Documentation
+│   ├── architecture.md        # Note d'architecture
+│   ├── CAHIER_DE_QUALITE.md  # Règles et métriques qualité
+│   └── DATA_DICTIONARY.md     # Dictionnaire de données
+├── etl/                        # Code source ETL (PySpark)
+│   ├── __init__.py
+│   ├── main.py               # Orchestrateur principal
+│   ├── settings.py           # Configuration & constantes
+│   ├── utils.py              # Utilitaires Spark
+│   ├── schema_bronze.py      # Schémas explicites
+│   └── jobs/                 # Jobs ETL
+│       ├── ingest.py         # Bronze: Ingestion
+│       ├── conform.py        # Silver: Conformation
+│       ├── load_dimensions.py     # Gold: Dimensions
+│       ├── load_product_scd.py    # Gold: Produits (SCD2)
+│       ├── load_fact.py      # Gold: Faits
+│       └── quality_report.py # Rapport qualité
+├── sql/                        # Scripts SQL
+│   ├── schema.sql            # DDL: Création tables
+│   ├── init_dimensions.sql   # Initialisation & vues
+│   └── analysis_queries.sql  # Requêtes analytiques
+├── tests/                      # Tests unitaires
+│   ├── test_etl.py           # Tests PySpark
+│   └── sample_data.jsonl     # Données de test
+├── projet/                     # Notebooks Jupyter
+│   └── OpenFoodFacts_ETL_Workshop.ipynb
+├── docker-compose.yml         # Services (MySQL)
+├── Dockerfile                 # Image ETL
+├── requirements.txt           # Dépendances Python
+├── download_dump.py          # Script téléchargement données
+└── README.md                  # Ce fichier
+```
+
+## 🚀 Installation & Configuration
+
+### Option 1: Docker (Recommandé) 🐳
+
+**La solution la plus simple et reproductible!**
+
+#### Prérequis
+- Docker >= 20.10
+- Docker Compose >= 1.29
+- Make (optionnel mais recommandé)
+
+#### Installation Rapide (3 commandes)
+
+```bash
+# 1. Cloner le dépôt
+git clone <repo_url>
+cd OpenFoodFact
+
+# 2. Construire et démarrer les services
+make build && make up
+
+# 3. Exécuter l'ETL avec données de test
+make etl-test
+```
+
+**C'est tout!** MySQL, PySpark, et toutes les dépendances sont configurés automatiquement.
+
+#### Commandes Utiles
+
+```bash
+# Voir toutes les commandes disponibles
+make help
+
+# Gestion des services
+make up              # Démarrer les services
+make down            # Arrêter les services
+make logs            # Voir les logs
+make ps              # État des services
+
+# Exécution ETL
+make etl-test        # Données de test
+make etl-full        # Dataset complet (après make download)
+make etl-skip        # Réutiliser Bronze existant
+
+# Développement
+make shell           # Shell dans conteneur ETL
+make mysql-shell     # Console MySQL
+make jupyter         # Jupyter Lab (http://localhost:8888)
+make test            # Tests unitaires
+```
+
+**📖 Plus de détails dans les sections ci-dessous**
+
+---
+
+### Option 2: Installation Manuelle
+
+#### Prérequis
+
+- **Python 3.10+** avec pip
+- **Java 11 ou 17** (pour PySpark)
+- **MySQL 8.0+**
+- **Git**
+
+#### Installation
+
+1. **Cloner le dépôt**
+   ```bash
+   git clone <repo_url>
+   cd OpenFoodFact
+   ```
+
+2. **Installer les dépendances Python**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Configurer Java (vérifier)**
+   ```bash
+   java -version
+   # Doit afficher Java 11 ou 17
+   ```
+
+4. **Configurer MySQL**
+   ```bash
+   # Créer la base de données
+   mysql -u root -p < sql/schema.sql
+   mysql -u root -p off_datamart < sql/init_dimensions.sql
+   ```
+
+5. **Télécharger les données OpenFoodFacts** (optionnel)
+   ```bash
+   python download_dump.py
+   # Télécharge ~5GB de données compressées
+   ```
+
+#### Configuration
+
+Variables d'environnement:
+
+```bash
+export DB_HOST=localhost
+export DB_PORT=3306
+export DB_NAME=off_datamart
+export DB_USER=root
+export DB_PASSWORD=password
+```
+
+## 💻 Utilisation
+
+### Option 1: Pipeline Complet (Recommandé)
+
+```bash
+# Avec données de test
+python -m etl.main tests/sample_data.jsonl
+
+# Avec données complètes OpenFoodFacts
+python -m etl.main data/openfoodfacts-products.jsonl
+
+# Skip ingestion (utiliser données Bronze existantes)
+python -m etl.main --skip-ingest
+```
+
+### Option 2: Jobs Individuels
+
+```bash
+# 1. Bronze: Ingestion
+python -m etl.jobs.ingest tests/sample_data.jsonl
+
+# 2. Silver: Conformation
+python -m etl.jobs.conform
+
+# 3. Gold: Charger dimensions
+python -m etl.jobs.load_dimensions
+
+# 4. Gold: Charger produits (SCD2)
+python -m etl.jobs.load_product_scd
+
+# 5. Gold: Charger faits
+python -m etl.jobs.load_fact
+
+# 6. Générer rapport qualité
+python -m etl.jobs.quality_report
+```
+
+### Option 3: Jupyter Notebook (Exploration Interactive)
+
+```bash
+jupyter notebook
+# Ouvrir: projet/OpenFoodFacts_ETL_Workshop.ipynb
+```
+
+## 📊 Requêtes Analytiques
+
+Après chargement du datamart, exécuter les requêtes dans `sql/analysis_queries.sql`:
+
+```sql
+-- Top 10 marques par proportion Nutri-Score A/B
+SELECT ...
+
+-- Distribution Nutri-Score par catégorie
+SELECT ...
+
+-- Heatmap pays × catégorie : moyenne sucres
+SELECT ...
+
+-- Taux de complétude par marque
+SELECT ...
+
+-- Anomalies détectées
+SELECT ...
+
+-- Évolution hebdomadaire complétude
+SELECT ...
+```
+
+Voir le fichier complet pour toutes les requêtes disponibles.
+
+## 🧪 Tests
+
+```bash
+# Lancer tous les tests
+pytest tests/test_etl.py -v
+
+# Tests spécifiques
+pytest tests/test_etl.py::TestUtils -v
+pytest tests/test_etl.py::TestQualityRules -v
+
+# Avec coverage
+pytest tests/test_etl.py --cov=etl --cov-report=html
+```
+
+## 📈 Qualité des Données
+
+Le pipeline implémente plusieurs règles de qualité:
+
+### Règles de Nettoyage (Silver)
+- ✅ Normalisation des tags (suppression préfixes langue)
+- ✅ Conversion unités (sel = sodium × 2.5)
+- ✅ Dédoublonnage par code-barres
+- ✅ Résolution noms produits (priorité: fr > en > fallback)
+
+### Règles de Validation
+- ✅ **Bornes:** Nutriments dans intervalles raisonnables (ex: 0 ≤ sugars_100g ≤ 100)
+- ✅ **Complétude:** Score pondéré de présence des champs clés
+- ✅ **Cohérence:** Détection incohérences (énergie négative, etc.)
+
+### Métriques Suivies
+- Taux de complétude par champ
+- Distribution des scores qualité
+- Nombre d'anomalies par type
+- Évolution temporelle de la qualité
+
+Voir `docs/CAHIER_DE_QUALITE.md` pour les détails complets.
+
+## 🔄 SCD Type 2 (Slowly Changing Dimensions)
+
+Les produits sont historisés avec SCD Type 2:
+
+```sql
+SELECT * FROM dim_product WHERE code = '3017620422003';
+```
+
+| product_sk | code | product_name | is_current | effective_from | effective_to |
+|------------|------|-------------|-----------|---------------|--------------|
+| 1 | 3017620422003 | Nutella | 0 | 2023-01-01 | 2023-06-15 |
+| 234 | 3017620422003 | Nutella Nouvelle Recette | 1 | 2023-06-15 | NULL |
+
+## 📝 Livrables du Projet
+
+- ✅ **Repo Git structuré** avec code source complet
+- ✅ **Pipeline Spark reproductible** (Bronze → Silver → Gold)
+- ✅ **Datamart MySQL** avec modèle en étoile
+- ✅ **Scripts DDL/DML** pour création et analyse
+- ✅ **Cahier de qualité** avec règles et métriques
+- ✅ **Requêtes analytiques** répondant aux KPI métiers
+- ✅ **Note d'architecture** avec choix techniques
+- ✅ **Tests unitaires** pour validation
+- ✅ **Documentation complète** (README, guides)
+
+## 🎯 KPI & Questions Métiers
+
+Le datamart répond aux questions suivantes:
+
+1. ✅ Répartition Nutri-Score par catégorie / marque / pays
+2. ✅ Évolution complétude des nutriments dans le temps
+3. ✅ Taux d'anomalies (valeurs hors bornes)
+4. ✅ Classement marques par qualité nutritionnelle moyenne
+5. ✅ Top catégories avec le plus de transformation (NOVA)
+6. ✅ Heatmap nutritionnelle pays × catégorie
+7. ✅ Produits nécessitant amélioration des données
+
+## 🛠️ Technologies Utilisées
+
+- **PySpark 3.5** - Traitement distribué Big Data
+- **MySQL 8.0** - Data Warehouse relationnel
+- **Python 3.10** - Langage principal
+- **Parquet** - Format stockage Data Lake
+- **Docker** - Conteneurisation services
+- **Jupyter** - Exploration interactive
+- **pytest** - Framework de tests
+
+## 📖 Documentation Complète
+
+- 📄 [Architecture détaillée](docs/architecture.md)
+- 📄 [Cahier de qualité](docs/CAHIER_DE_QUALITE.md)
+- 📄 [Dictionnaire de données](docs/DATA_DICTIONARY.md)
+- 📄 [Requêtes analytiques](sql/analysis_queries.sql)
+
+## 🐛 Dépannage
+
+### Erreur Java not found
+```bash
+# Installer Java 17
+sudo apt install openjdk-17-jre-headless  # Linux
+brew install openjdk@17                     # macOS
+
+# Configurer JAVA_HOME
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+```
+
+### Erreur MySQL connection refused
+```bash
+# Vérifier que MySQL est démarré
+docker-compose ps
+docker-compose up -d mysql
+
+# Tester connexion
+mysql -h localhost -u root -p -e "SELECT 1"
+```
+
+### Erreur mémoire Spark
+```bash
+# Augmenter mémoire driver
+export SPARK_DRIVER_MEMORY=4g
+python -m etl.main <input_file>
+```
+
+## 👥 Auteurs
+
+**Équipe M1 EISI/CDPIA/CYBER**
+Année universitaire 2024-2025
+
+## 📜 Licence
+
+Projet académique - M1 Data Science & AI
+
+## 🔗 Ressources Externes
+
+- [OpenFoodFacts](https://world.openfoodfacts.org) - Source des données
+- [PySpark Documentation](https://spark.apache.org/docs/latest/api/python/)
+- [MySQL 8.0 Reference](https://dev.mysql.com/doc/refman/8.0/en/)
+
+---
+
+**Note:** Ce projet a été réalisé dans le cadre du module TRDE703 "Atelier Intégration des Données" avec utilisation autorisée de ChatGPT/Claude comme assistant.

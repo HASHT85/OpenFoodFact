@@ -1,38 +1,102 @@
-import sys
-import os
+"""
+Bronze Layer Ingestion Job
+Reads raw OpenFoodFacts data (JSON/JSONL) and writes to Parquet with explicit schema
+"""
+from pyspark.sql import SparkSession, DataFrame
+from etl.utils import setup_logger
+from etl.schema_bronze import get_bronze_schema
+from etl.settings import BRONZE_PATH
 
-# Add parent dir to path to import utils
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils import get_spark_session, get_logger
-from schema_bronze import get_bronze_schema
+logger = setup_logger("Ingest")
 
-def ingest_raw_data(spark, input_path, output_path):
-    logger = get_logger("BronzeIngestion")
-    logger.info(f"Starting ingestion from {input_path} to {output_path}")
 
+def ingest_raw_data(spark: SparkSession, input_path: str, output_path: str = BRONZE_PATH) -> DataFrame:
+    """
+    Ingest raw OpenFoodFacts data into Bronze layer
+
+    Args:
+        spark: SparkSession
+        input_path: Path to JSONL or JSON file
+        output_path: Path to write Bronze Parquet files
+
+    Returns:
+        DataFrame with ingested data
+    """
+    logger.info(f"Starting Bronze ingestion from: {input_path}")
+
+    # Read with explicit schema
     schema = get_bronze_schema()
 
-    # Read JSON
-    df = spark.read.schema(schema).json(input_path)
+    try:
+        df_raw = spark.read.schema(schema).json(input_path)
+    except Exception as e:
+        logger.error(f"Failed to read input file: {e}")
+        raise
 
-    # Basic stats
-    count = df.count()
-    logger.info(f"Read {count} records.")
+    # Basic metrics
+    total_records = df_raw.count()
+    logger.info(f"Total records read: {total_records}")
 
-    # Write to Parquet (Bronze)
-    # Mode overwrite for idempotency in this workshop context
-    df.write.mode("overwrite").parquet(output_path)
-    logger.info("Bronze ingestion complete.")
+    # Filter out records without code (required field)
+    df_valid = df_raw.filter(df_raw.code.isNotNull())
+    valid_records = df_valid.count()
+    invalid_records = total_records - valid_records
+
+    if invalid_records > 0:
+        logger.warning(f"Filtered out {invalid_records} records without product code")
+
+    # Write to Bronze layer (Parquet for better performance)
+    logger.info(f"Writing Bronze layer to: {output_path}")
+    df_valid.write.mode("overwrite").parquet(output_path)
+
+    logger.info(f"Bronze ingestion complete. Valid records: {valid_records}")
+
+    return df_valid
+
+
+def run_ingest_job(spark: SparkSession, input_path: str) -> dict:
+    """
+    Main entry point for Bronze ingestion job
+
+    Returns:
+        Dictionary with job metrics
+    """
+    logger.info("=" * 80)
+    logger.info("BRONZE LAYER INGESTION JOB")
+    logger.info("=" * 80)
+
+    df = ingest_raw_data(spark, input_path)
+
+    metrics = {
+        "job": "ingest",
+        "layer": "bronze",
+        "input_path": input_path,
+        "output_path": BRONZE_PATH,
+        "total_records": df.count(),
+    }
+
+    logger.info(f"Ingestion metrics: {metrics}")
+    return metrics
+
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: ingest.py <input_json_path> <output_parquet_path>")
+    import sys
+    from etl.utils import create_spark_session
+
+    if len(sys.argv) < 2:
+        print("Usage: python -m etl.jobs.ingest <input_path>")
         sys.exit(1)
-    
-    input_path = sys.argv[1]
-    output_path = sys.argv[2]
-    
-    spark = get_spark_session("OFF_Bronze_Ingestion")
-    ingest_raw_data(spark, input_path, output_path)
-    spark.stop()
+
+    input_file = sys.argv[1]
+    spark = create_spark_session("OFF_Bronze_Ingest")
+
+    try:
+        metrics = run_ingest_job(spark, input_file)
+        print(f"\n✓ Bronze ingestion completed successfully")
+        print(f"  Records: {metrics['total_records']}")
+    except Exception as e:
+        logger.error(f"Job failed: {e}")
+        sys.exit(1)
+    finally:
+        spark.stop()
