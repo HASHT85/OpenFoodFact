@@ -53,8 +53,41 @@ services:
       - off_network
     command: tail -f /dev/null
 
+  # Jupyter Lab Service - For exploration and analysis
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: off_jupyter
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-off_datamart}
+      DB_USER: root
+      DB_PASSWORD: ${DB_ROOT_PASSWORD:-password}
+      JUPYTER_ENABLE_LAB: "yes"
+      SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-2g}
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - ./:/app
+      - jupyter_data:/root/.jupyter
+    networks:
+      - off_network
+    command: >
+      bash -c "
+        jupyter lab --ip=0.0.0.0 --port=8888 --no-browser
+        --allow-root --NotebookApp.token='' --NotebookApp.password=''
+      "
+
 volumes:
   mysql_data:
+    driver: local
+  jupyter_data:
     driver: local
 
 networks:

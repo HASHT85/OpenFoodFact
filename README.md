@@ -137,6 +137,7 @@ make etl-skip        # Réutiliser Bronze existant
 # Développement
 make shell           # Shell dans conteneur ETL
 make mysql-shell     # Console MySQL
+make jupyter         # Jupyter Lab (http://localhost:8888)
 make test            # Tests unitaires
 ```
 

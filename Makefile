@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs clean test etl-full etl-skip shell mysql-shell
+.PHONY: help build up down restart logs clean test etl-full etl-skip shell mysql-shell jupyter
 
 # Default target
 help:
@@ -34,12 +34,21 @@ help:
 build:
 	docker-compose build
 
-# Start services
+# Start services (MySQL + ETL only)
 up:
-	docker-compose up -d
+	docker-compose up -d mysql etl
 	@echo "Waiting for MySQL to be ready..."
 	@sleep 10
 	@echo "Services started! Use 'make logs' to see logs."
+	@echo "To start Jupyter: make jupyter"
+
+# Start all services (including Jupyter)
+up-all:
+	docker-compose up -d
+	@echo "Waiting for MySQL to be ready..."
+	@sleep 10
+	@echo "All services started!"
+	@echo "Jupyter Lab available at: http://localhost:8888"
 
 # Stop services
 down:
@@ -58,6 +67,9 @@ logs-etl:
 
 logs-mysql:
 	docker-compose logs -f mysql
+
+logs-jupyter:
+	docker-compose logs -f jupyter
 
 # Show running containers
 ps:
@@ -99,6 +111,15 @@ shell:
 
 mysql-shell:
 	docker-compose exec mysql mysql -u root -ppassword off_datamart
+
+# Start Jupyter Lab (on demand)
+jupyter:
+	docker-compose up -d jupyter
+	@echo "Jupyter Lab started!"
+	@echo "Access at: http://localhost:8888"
+	@echo "No password required (token disabled for development)"
+	@echo ""
+	@echo "To stop Jupyter: docker-compose stop jupyter"
 
 # Run tests
 test:
